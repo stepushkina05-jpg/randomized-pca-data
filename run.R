@@ -172,6 +172,7 @@ if (args$dataset_name == "sc-mix") {
     s <- sample(ncol(sce), 5000)
     sce <- sce[,s]
   }
+  sce <- sce[rowData(sce)$Type=="Gene Expression",] # only keep gene features
 } else if (args$dataset_name == "pancreas") {
 
   baron       <- BaronPancreasData("human")
