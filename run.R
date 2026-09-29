@@ -89,21 +89,51 @@ options(timeout = max(3600, getOption("timeout", 60)))
 write(sprintf("downloading: %s", url), stderr())
 download.file(url, destfile = h5ad_path, mode = "wb", ethod = "libcurl")
 
-# Read the downloaded H5AD and extract the known labels.
-adata <- anndataR::read_h5ad(h5ad_path)
+# Read only cell IDs and labels from the H5AD metadata.
+obs_listing <- rhdf5::h5ls(h5ad_path, recursive = TRUE)
+obs_columns <- obs_listing$name[obs_listing$group == "/obs"]
 
-if (!(labels_var %in% colnames(adata$obs))) {
+if (!(labels_var %in% obs_columns)) {
   stop(sprintf(
     "Label column '%s' not found. Available obs columns: %s",
     labels_var,
-    paste(colnames(adata$obs), collapse = ", ")
+    paste(obs_columns, collapse = ", ")
   ))
 }
 
+obs_attributes <- rhdf5::h5readAttributes(h5ad_path, "/obs")
+index_name <- obs_attributes[["_index"]]
+
+if (is.null(index_name) || !nzchar(index_name)) {
+  index_name <- "_index"
+}
+
+cell_ids <- rhdf5::h5read(
+  h5ad_path,
+  paste0("/obs/", index_name)
+)
+
+label_object <- rhdf5::h5read(
+  h5ad_path,
+  paste0("/obs/", labels_var)
+)
+
+# AnnData normally stores categorical obs columns as categories + integer codes.
+if (is.list(label_object) &&
+    all(c("categories", "codes") %in% names(label_object))) {
+  categories <- as.character(label_object$categories)
+  codes <- as.integer(label_object$codes)
+
+  labels <- rep(NA_character_, length(codes))
+  valid <- codes >= 0L
+  labels[valid] <- categories[codes[valid] + 1L]
+} else {
+  labels <- as.character(label_object)
+}
+
 clusters_truth <- data.frame(
-  cell_id = adata$obs_names,
-  label = as.character(adata$obs[[labels_var]]),
-  stringsAsFactors = FALSE
+  cell_id = as.character(cell_ids),
+  label = labels
 )
 
 if (anyNA(clusters_truth$label)) {
