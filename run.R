@@ -28,22 +28,37 @@ properties_path <- file.path(args$output_dir, paste0(args$name, "_properties.yam
 dataset_catalog <- list(
   p31_s42_narrow_signal = list(
     repository = "btraven/splatter-cube-pbmc3k",
+    source = "huggingface",
     revision = "main",
     filename = "data/p31_s42.h5ad",
     labels_var = "Group"
+
   ),
   p35_s42_broad_signal = list(
     repository = "btraven/splatter-cube-pbmc3k",
+    source = "huggingface",
     revision = "main",
     filename = "data/p35_s42.h5ad",
     labels_var = "Group"
   ),
   p38_s42_strong_signal = list(
     repository = "btraven/splatter-cube-pbmc3k",
+    source = "huggingface",
     revision = "main",
     filename = "data/p38_s42.h5ad",
     labels_var = "Group"
-  )
+  ),
+  human_mec_50362 = list(
+    source = "cellxgene",
+    repository = "283d65eb-dd53-496d-adb7-7570c7caa443",
+    revision = "73118fbf-bb19-49c8-bfad-bdf9eb8e103d",
+    filename = "73118fbf-bb19-49c8-bfad-bdf9eb8e103d.h5ad",
+    url = paste0(
+      "https://datasets.cellxgene.cziscience.com/",
+      "73118fbf-bb19-49c8-bfad-bdf9eb8e103d.h5ad"
+    ),
+    labels_var = "supercluster_term"
+)
 )
 
 if (!(args$dataset_name %in% names(dataset_catalog))) {
@@ -57,15 +72,22 @@ if (is.null(labels_var) || is.na(labels_var) || !nzchar(labels_var)) {
   labels_var <- dataset$labels_var
 }
 
-url <- sprintf(
-  "https://huggingface.co/datasets/%s/resolve/%s/%s",
-  dataset$repository,
-  dataset$revision,
-  dataset$filename
-)
+
+if (!is.null(dataset$url)) {
+  url <- dataset$url
+} else {
+  url <- sprintf(
+    "https://huggingface.co/datasets/%s/resolve/%s/%s",
+    dataset$repository,
+    dataset$revision,
+    dataset$filename
+  )
+}
+
+options(timeout = max(3600, getOption("timeout", 60)))
 
 write(sprintf("downloading: %s", url), stderr())
-download.file(url, destfile = h5ad_path, mode = "wb")
+download.file(url, destfile = h5ad_path, mode = "wb", ethod = "libcurl")
 
 # Read the downloaded H5AD and extract the known labels.
 adata <- anndataR::read_h5ad(h5ad_path)
@@ -80,7 +102,8 @@ if (!(labels_var %in% colnames(adata$obs))) {
 
 clusters_truth <- data.frame(
   cell_id = adata$obs_names,
-  label = as.character(adata$obs[[labels_var]])
+  label = as.character(adata$obs[[labels_var]]),
+  stringsAsFactors = FALSE
 )
 
 if (anyNA(clusters_truth$label)) {
@@ -104,6 +127,7 @@ yaml::write_yaml(
     source = "huggingface",
     source_repository = dataset$repository,
     source_revision = dataset$revision,
+    source_url = url,
     source_filename = dataset$filename,
     batch_var = args$batch_var,
     sample_var = args$sample_var,
